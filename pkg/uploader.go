@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/url"
 
 	"github.com/Azure/azure-pipeline-go/pipeline"
@@ -79,7 +78,7 @@ func (ua UploaderArgs) UploadAnalysisReport(analysisReport string) error {
 func (ua UploaderArgs) UploadTransactionEvent(event map[string]interface{}) error {
 	url, err := url.Parse(fmt.Sprintf("%s/%s/metadata.json", ua.BaseURL.String(), ua.Path))
 	if err != nil {
-		log.Fatal(err)
+		return fmt.Errorf("Unable to parse file url: %v", err)
 	}
 
 	fileURL := azfile.NewFileURL(*url, ua.Pipeline)

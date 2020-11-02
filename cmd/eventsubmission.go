@@ -6,8 +6,8 @@ import (
 	"log"
 	"os"
 
-	"github.com/streadway/amqp"
 	"github.com/filetrust/event-submission-service/pkg"
+	"github.com/streadway/amqp"
 )
 
 var (
@@ -15,15 +15,15 @@ var (
 	routingKey = "transaction-event"
 	queueName  = "transaction-event-queue"
 
-	amqpURL = os.Getenv("AMQP_URL")
+	amqpURL     = os.Getenv("AMQP_URL")
 	accountName = os.Getenv("ACCOUNT_NAME")
-	accountKey = os.Getenv("ACCOUNT_KEY")
+	accountKey  = os.Getenv("ACCOUNT_KEY")
 )
 
 const AnalysisReportID = 112
 
 func main() {
-	if (amqpURL == "" || accountName == "" || accountKey == "") {
+	if amqpURL == "" || accountName == "" || accountKey == "" {
 		log.Fatalf("init failed: AMQP_URL, ACCOUNT_NAME or ACCOUNT_KEY environment variables not set")
 	}
 
@@ -96,7 +96,7 @@ func processMessage(d amqp.Delivery) (bool, error) {
 
 	eventID := int(body["EventId"].(float64))
 
-	if (eventID == AnalysisReportID){
+	if eventID == AnalysisReportID {
 		args.UploadAnalysisReport(body["AnalysisReport"].(string))
 	} else {
 		args.UploadTransactionEvent(body)

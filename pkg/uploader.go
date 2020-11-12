@@ -57,7 +57,7 @@ func (ua *UploaderArgs) GetPaths(timestamp, fileID string) error {
 }
 
 func (ua UploaderArgs) UploadAnalysisReport(analysisReport string) error {
-	url, err := url.Parse(fmt.Sprintf("%s/%s/report.json", ua.BaseURL.String(), ua.Path))
+	url, err := url.Parse(fmt.Sprintf("%s/%s/report.xml", ua.BaseURL.String(), ua.Path))
 	if err != nil {
 		return fmt.Errorf("Unable to parse file url: %v", err)
 	}

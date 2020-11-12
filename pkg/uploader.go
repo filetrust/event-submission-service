@@ -19,7 +19,11 @@ type UploaderArgs struct {
 }
 
 type MetadataJson struct {
-	Events []interface{}
+	Events []PropertiesData
+}
+
+type PropertiesData struct {
+	Properties map[string]interface{}
 }
 
 func (ua *UploaderArgs) GetPipeline() error {
@@ -102,7 +106,10 @@ func (ua UploaderArgs) UploadTransactionEvent(event map[string]interface{}) erro
 		}
 	}
 
-	jsonData.Events = append(jsonData.Events, event)
+	properties := PropertiesData{}
+	properties.Properties = event
+
+	jsonData.Events = append(jsonData.Events, properties)
 
 	file, err := json.Marshal(jsonData)
 

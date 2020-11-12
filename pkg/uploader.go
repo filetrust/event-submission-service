@@ -19,7 +19,11 @@ type UploaderArgs struct {
 }
 
 type MetadataJson struct {
-	Events []interface{}
+	Events []PropertiesData
+}
+
+type PropertiesData struct {
+	Properties map[string]interface{}
 }
 
 func (ua *UploaderArgs) GetPipeline() error {
@@ -53,7 +57,7 @@ func (ua *UploaderArgs) GetPaths(timestamp, fileID string) error {
 }
 
 func (ua UploaderArgs) UploadAnalysisReport(analysisReport string) error {
-	url, err := url.Parse(fmt.Sprintf("%s/%s/report.json", ua.BaseURL.String(), ua.Path))
+	url, err := url.Parse(fmt.Sprintf("%s/%s/report.xml", ua.BaseURL.String(), ua.Path))
 	if err != nil {
 		return fmt.Errorf("Unable to parse file url: %v", err)
 	}
@@ -102,7 +106,10 @@ func (ua UploaderArgs) UploadTransactionEvent(event map[string]interface{}) erro
 		}
 	}
 
-	jsonData.Events = append(jsonData.Events, event)
+	properties := PropertiesData{}
+	properties.Properties = event
+
+	jsonData.Events = append(jsonData.Events, properties)
 
 	file, err := json.Marshal(jsonData)
 

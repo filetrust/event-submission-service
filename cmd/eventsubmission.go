@@ -6,6 +6,8 @@ import (
 	"log"
 	"os"
 
+	"net/url"
+
 	"github.com/filetrust/event-submission-service/pkg"
 	"github.com/streadway/amqp"
 )
@@ -15,19 +17,44 @@ var (
 	routingKey = "transaction-event"
 	queueName  = "transaction-event-queue"
 
-	amqpURL     = os.Getenv("AMQP_URL")
-	accountName = os.Getenv("ACCOUNT_NAME")
-	accountKey  = os.Getenv("ACCOUNT_KEY")
+	accountName                   = os.Getenv("ACCOUNT_NAME")
+	accountKey                    = os.Getenv("ACCOUNT_KEY")
+	transactionEventQueueHostname = os.Getenv("TRANSACTION_EVENT_QUEUE_HOSTNAME")
+	transactionEventQueuePort     = os.Getenv("TRANSACTION_EVENT_QUEUE_PORT")
+	messagebrokeruser             = os.Getenv("MESSAGE_BROKER_USER")
+	messagebrokerpassword         = os.Getenv("MESSAGE_BROKER_PASSWORD")
 )
 
 const AnalysisReportID = 112
 
 func main() {
-	if amqpURL == "" || accountName == "" || accountKey == "" {
-		log.Fatalf("init failed: AMQP_URL, ACCOUNT_NAME or ACCOUNT_KEY environment variables not set")
+	if accountName == "" || accountKey == "" {
+		log.Fatalf("init failed: ACCOUNT_NAME or ACCOUNT_KEY environment variables not set")
 	}
 
-	conn, err := amqp.Dial(amqpURL)
+	if transactionEventQueueHostname == "" || transactionEventQueuePort == "" {
+		log.Fatalf("init failed: TRANSACTION_EVENT_QUEUE_HOSTNAME, or TRANSACTION_EVENT_QUEUE_PORT environment variables not set")
+	}
+
+	if messagebrokeruser == "" {
+		messagebrokeruser = "guest"
+		log.Printf("Using default message broker user")
+	}
+
+	if messagebrokerpassword == "" {
+		messagebrokerpassword = "guest"
+		log.Printf("Using default message broker password")
+	}
+
+	amqpUrl := url.URL{
+		Scheme: "amqp",
+		User:   url.UserPassword(messagebrokeruser, messagebrokerpassword),
+		Host:   fmt.Sprintf("%s:%s", transactionEventQueueHostname, transactionEventQueuePort),
+		Path:   "/",
+	}
+	fmt.Println("Connecting to ", amqpUrl.Host)
+
+	conn, err := amqp.Dial(amqpUrl.String())
 	failOnError(err, "Failed to connect to RabbitMQ")
 	defer conn.Close()
 

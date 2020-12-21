@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"log"
 	"os"
-
-	"net/url"
+	"time"
 
 	"github.com/filetrust/event-submission-service/pkg"
+	"net/url"
 	"github.com/streadway/amqp"
 )
 
@@ -17,8 +17,7 @@ var (
 	routingKey = "transaction-event"
 	queueName  = "transaction-event-queue"
 
-	accountName                   = os.Getenv("ACCOUNT_NAME")
-	accountKey                    = os.Getenv("ACCOUNT_KEY")
+	rootPath                      = os.Getenv("TRANSACTION_STORE_ROOT_PATH")
 	transactionEventQueueHostname = os.Getenv("TRANSACTION_EVENT_QUEUE_HOSTNAME")
 	transactionEventQueuePort     = os.Getenv("TRANSACTION_EVENT_QUEUE_PORT")
 	messagebrokeruser             = os.Getenv("MESSAGE_BROKER_USER")
@@ -28,8 +27,8 @@ var (
 const AnalysisReportID = 112
 
 func main() {
-	if accountName == "" || accountKey == "" {
-		log.Fatalf("init failed: ACCOUNT_NAME or ACCOUNT_KEY environment variables not set")
+	if rootPath == "" {
+		log.Fatalf("init failed: TRANSACTION_STORE_ROOT_PATH")
 	}
 
 	if transactionEventQueueHostname == "" || transactionEventQueuePort == "" {
@@ -52,6 +51,7 @@ func main() {
 		Host:   fmt.Sprintf("%s:%s", transactionEventQueueHostname, transactionEventQueuePort),
 		Path:   "/",
 	}
+
 	fmt.Println("Connecting to ", amqpUrl.Host)
 
 	conn, err := amqp.Dial(amqpUrl.String())
@@ -104,30 +104,38 @@ func processMessage(d amqp.Delivery) (bool, error) {
 		return false, fmt.Errorf("Failed to read message body: %v", err)
 	}
 
+	return processJSONBody(body);
+}
+
+func processJSONBody(body map[string]interface{}) (bool, error) {
 	log.Printf("Received a message. FileId: %s, EventId: %x", body["FileId"], int(body["EventId"].(float64)))
 
-	args := uploader.UploaderArgs{
-		AccountName: accountName,
-		AccountKey:  accountKey,
+	path, err := getPathFromTimestamp(body["Timestamp"].(string), body["FileId"].(string))
+	if err != nil {
+		return false, fmt.Errorf("Unable to generate path from timestamp: %v", err)
 	}
 
-	err = args.GetPipeline()
-	if err != nil {
-		return true, fmt.Errorf("Failed to create pipeline to share: %v", err)
-	}
-
-	err = args.GetPaths(body["Timestamp"].(string), body["FileId"].(string))
-	if err != nil {
-		return true, fmt.Errorf("Failed to get file paths: %v", err)
-	}
+	args := transactionservice.Args{}
+	args.Path = path
 
 	eventID := int(body["EventId"].(float64))
 
 	if eventID == AnalysisReportID {
-		args.UploadAnalysisReport(body["AnalysisReport"].(string))
+		args.WriteAnalysisReport(body["AnalysisReport"].(string))
 	} else {
-		args.UploadTransactionEvent(body)
+		args.WriteTransactionEvent(body)
 	}
 
 	return false, nil
+}
+
+func getPathFromTimestamp(timestamp, fileID string) (string, error) {
+	t, err := time.Parse(time.RFC3339, timestamp)
+	if err != nil {
+		return "", err
+	}
+
+	path := fmt.Sprintf("%s/%d/%d/%d/%d/%s", rootPath, t.Year(), t.Month(), t.Day(), t.Hour(), fileID)
+
+	return path, nil
 }

@@ -5,11 +5,21 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"net/url"
 
-	"github.com/filetrust/event-submission-service/pkg"
+	transactionservice "github.com/filetrust/event-submission-service/pkg"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/streadway/amqp"
+)
+
+const (
+	ok               = "ok"
+	jsonerr          = "json_error"
+	timestamperr     = "timestamp_error"
+	analysisReportID = 112
 )
 
 var (
@@ -17,19 +27,32 @@ var (
 	routingKey = "transaction-event"
 	queueName  = "transaction-event-queue"
 
-	accountName                   = os.Getenv("ACCOUNT_NAME")
-	accountKey                    = os.Getenv("ACCOUNT_KEY")
+	procTime = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "gw_eventsubmission_message_processing_time_millisecond",
+			Help:    "Time taken to process queue message",
+			Buckets: []float64{5, 10, 100, 250, 500, 1000},
+		},
+	)
+
+	msgTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "gw_eventsubmission_messages_consumed_total",
+			Help: "Number of messages consumed from Rabbit",
+		},
+		[]string{"status"},
+	)
+
+	rootPath                      = os.Getenv("TRANSACTION_STORE_ROOT_PATH")
 	transactionEventQueueHostname = os.Getenv("TRANSACTION_EVENT_QUEUE_HOSTNAME")
 	transactionEventQueuePort     = os.Getenv("TRANSACTION_EVENT_QUEUE_PORT")
 	messagebrokeruser             = os.Getenv("MESSAGE_BROKER_USER")
 	messagebrokerpassword         = os.Getenv("MESSAGE_BROKER_PASSWORD")
 )
 
-const AnalysisReportID = 112
-
 func main() {
-	if accountName == "" || accountKey == "" {
-		log.Fatalf("init failed: ACCOUNT_NAME or ACCOUNT_KEY environment variables not set")
+	if rootPath == "" {
+		log.Fatalf("init failed: TRANSACTION_STORE_ROOT_PATH")
 	}
 
 	if transactionEventQueueHostname == "" || transactionEventQueuePort == "" {
@@ -46,15 +69,16 @@ func main() {
 		log.Printf("Using default message broker password")
 	}
 
-	amqpUrl := url.URL{
+	amqpURL := url.URL{
 		Scheme: "amqp",
 		User:   url.UserPassword(messagebrokeruser, messagebrokerpassword),
 		Host:   fmt.Sprintf("%s:%s", transactionEventQueueHostname, transactionEventQueuePort),
 		Path:   "/",
 	}
-	fmt.Println("Connecting to ", amqpUrl.Host)
 
-	conn, err := amqp.Dial(amqpUrl.String())
+	fmt.Println("Connecting to ", amqpURL.Host)
+
+	conn, err := amqp.Dial(amqpURL.String())
 	failOnError(err, "Failed to connect to RabbitMQ")
 	defer conn.Close()
 
@@ -97,37 +121,52 @@ func failOnError(err error, msg string) {
 }
 
 func processMessage(d amqp.Delivery) (bool, error) {
+	defer func(start time.Time) {
+		procTime.Observe(float64(time.Since(start).Milliseconds()))
+	}(time.Now())
+
 	var body map[string]interface{}
 
 	err := json.Unmarshal(d.Body, &body)
 	if err != nil {
+		msgTotal.WithLabelValues(jsonerr).Inc()
 		return false, fmt.Errorf("Failed to read message body: %v", err)
 	}
 
+	return processJSONBody(body)
+}
+
+func processJSONBody(body map[string]interface{}) (bool, error) {
 	log.Printf("Received a message. FileId: %s, EventId: %x", body["FileId"], int(body["EventId"].(float64)))
 
-	args := uploader.UploaderArgs{
-		AccountName: accountName,
-		AccountKey:  accountKey,
+	path, err := getPathFromTimestamp(body["Timestamp"].(string), body["FileId"].(string))
+	if err != nil {
+		msgTotal.WithLabelValues(timestamperr).Inc()
+		return false, fmt.Errorf("Unable to generate path from timestamp: %v", err)
 	}
 
-	err = args.GetPipeline()
-	if err != nil {
-		return true, fmt.Errorf("Failed to create pipeline to share: %v", err)
-	}
-
-	err = args.GetPaths(body["Timestamp"].(string), body["FileId"].(string))
-	if err != nil {
-		return true, fmt.Errorf("Failed to get file paths: %v", err)
-	}
+	args := transactionservice.Args{}
+	args.Path = path
 
 	eventID := int(body["EventId"].(float64))
 
-	if eventID == AnalysisReportID {
-		args.UploadAnalysisReport(body["AnalysisReport"].(string))
+	if eventID == analysisReportID {
+		args.WriteAnalysisReport(body["AnalysisReport"].(string))
 	} else {
-		args.UploadTransactionEvent(body)
+		args.WriteTransactionEvent(body)
 	}
 
+	msgTotal.WithLabelValues(ok).Inc()
 	return false, nil
+}
+
+func getPathFromTimestamp(timestamp, fileID string) (string, error) {
+	t, err := time.Parse(time.RFC3339, timestamp)
+	if err != nil {
+		return "", err
+	}
+
+	path := fmt.Sprintf("%s/%d/%d/%d/%d/%s", rootPath, t.Year(), t.Month(), t.Day(), t.Hour(), fileID)
+
+	return path, nil
 }

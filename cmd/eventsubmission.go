@@ -7,11 +7,13 @@ import (
 	"os"
 	"time"
 
+	"net/http"
 	"net/url"
 
 	transactionservice "github.com/filetrust/event-submission-service/pkg"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/streadway/amqp"
 )
 
@@ -108,6 +110,11 @@ func main() {
 				ch.Nack(d.DeliveryTag, false, requeue)
 			}
 		}
+	}()
+
+	go func() {
+		http.Handle("/metrics", promhttp.Handler())
+		http.ListenAndServe(":8001", nil)
 	}()
 
 	log.Printf("[*] Waiting for messages. To exit press CTRL+C")

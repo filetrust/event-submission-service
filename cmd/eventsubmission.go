@@ -7,11 +7,13 @@ import (
 	"os"
 	"time"
 
+	"net/http"
 	"net/url"
 
 	transactionservice "github.com/filetrust/event-submission-service/pkg"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/streadway/amqp"
 )
 
@@ -44,6 +46,7 @@ var (
 	)
 
 	rootPath                      = os.Getenv("TRANSACTION_STORE_ROOT_PATH")
+	metricsPort                   = os.Getenv("METRICS_PORT")
 	transactionEventQueueHostname = os.Getenv("TRANSACTION_EVENT_QUEUE_HOSTNAME")
 	transactionEventQueuePort     = os.Getenv("TRANSACTION_EVENT_QUEUE_PORT")
 	messagebrokeruser             = os.Getenv("MESSAGE_BROKER_USER")
@@ -53,6 +56,10 @@ var (
 func main() {
 	if rootPath == "" {
 		log.Fatalf("init failed: TRANSACTION_STORE_ROOT_PATH")
+	}
+
+	if metricsPort == "" {
+		log.Fatalf("init failed METRICS_PORT")
 	}
 
 	if transactionEventQueueHostname == "" || transactionEventQueuePort == "" {
@@ -108,6 +115,11 @@ func main() {
 				ch.Nack(d.DeliveryTag, false, requeue)
 			}
 		}
+	}()
+
+	go func() {
+		http.Handle("/metrics", promhttp.Handler())
+		http.ListenAndServe(fmt.Sprintf(":%v", metricsPort), nil)
 	}()
 
 	log.Printf("[*] Waiting for messages. To exit press CTRL+C")

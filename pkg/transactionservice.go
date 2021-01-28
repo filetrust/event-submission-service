@@ -74,6 +74,9 @@ func (ua Args) WriteTransactionEvent(event map[string]interface{}) error {
 	jsonData.Events = append(jsonData.Events, properties)
 
 	file, err := json.Marshal(jsonData)
+	if err != nil {
+		return fmt.Errorf("Unable to marshal json: %v", err)
+	}
 
 	err = ioutil.WriteFile(filePath, file, 0644)
 	if err != nil {

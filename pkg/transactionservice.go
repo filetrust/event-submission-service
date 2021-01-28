@@ -56,7 +56,7 @@ func (ua Args) WriteTransactionEvent(event map[string]interface{}) error {
 
 	jsonData := MetadataJson{}
 
-	if _, err := os.Stat(filePath); !os.IsNotExist(err) {
+	if _, err := os.Stat(filePath); err == nil {
 		content, err := ioutil.ReadFile(filePath)
 		if err != nil {
 			return fmt.Errorf("Unable to parse file as json: %v", err)

@@ -58,32 +58,33 @@ func (ua Args) WriteTransactionEvent(event map[string]interface{}) error {
 
 	filePath := fmt.Sprintf("%s/metadata.json", ua.Path)
 
+	jsonData := MetadataJson{}
+
 	err := try.Do(func(attempt int) (bool, error) {
-		jsonData := MetadataJson{}
-		jsonData, err := CheckExistingFile(filePath)
+		var err error
 
-		if err != nil {
-			errmsg := fmt.Errorf("Unable to parse file as json: %v", err)
-			log.Printf("Failed to write event: Attempt %v, Error: %v", attempt, errmsg)
+		if jsonData.Events == nil {
+			jsonData, err = CheckExistingFile(filePath)
+			if err != nil {
+				log.Printf("Failed to write event: Attempt %v, Error: %v", attempt, err)
 
-			if attempt < 5 {
-				time.Sleep(time.Duration(attempt) * time.Second) // 5 second wait if more attempts left
+				if attempt < 5 {
+					time.Sleep(time.Duration(attempt) * time.Second) // 5 second wait if more attempts left
+				}
+
+				return attempt < 5, err
 			}
-
-			return attempt < 5, errmsg
 		}
 
 		err = WriteEventToFile(filePath, jsonData, event)
-
 		if err != nil {
-			errmsg := fmt.Errorf("Unable to write file: %v", err)
-			log.Printf("Failed to write event: Attempt %v, Error: %v", attempt, errmsg)
+			log.Printf("Failed to write event: Attempt %v, Error: %v", attempt, err)
 
 			if attempt < 5 {
 				time.Sleep(time.Duration(attempt) * time.Second) // 5 second wait if more attempts left
 			}
 
-			return attempt < 5, errmsg
+			return attempt < 5, err
 		}
 
 		return attempt < 5, nil
@@ -106,7 +107,12 @@ func WriteEventToFile(filePath string, jsonData MetadataJson, event map[string]i
 		return fmt.Errorf("Unable to marshal json: %v", err)
 	}
 
-	return ioutil.WriteFile(filePath, file, 0644)
+	err = ioutil.WriteFile(filePath, file, 0644)
+	if err != nil {
+		return fmt.Errorf("Unable to write file: %v", err)
+	}
+
+	return nil
 }
 
 func CheckExistingFile(filePath string) (MetadataJson, error) {
@@ -115,7 +121,7 @@ func CheckExistingFile(filePath string) (MetadataJson, error) {
 	if _, err := os.Stat(filePath); !os.IsNotExist(err) {
 		content, err := ioutil.ReadFile(filePath)
 		if err != nil {
-			return jsonData, fmt.Errorf("Unable to parse file as json: %v", err)
+			return jsonData, fmt.Errorf("Unable to read file: %v", err)
 		}
 
 		err = json.Unmarshal(content, &jsonData)

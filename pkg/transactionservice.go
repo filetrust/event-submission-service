@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"time"
 
 	"github.com/matryer/try"
 )
@@ -61,10 +62,19 @@ func (ua Args) WriteTransactionEvent(event map[string]interface{}) error {
 		jsonData, err := CheckExistingFile(filePath)
 
 		if err != nil {
+			if attempt < 5 {
+				time.Sleep(time.Duration(attempt) * time.Second) // 5 second wait if more attempts left
+			}
 			return attempt < 5, fmt.Errorf("Unable to parse file as json: %v", err)
 		}
 
-		return attempt < 5, WriteEventToFile(filePath, jsonData, event)
+		err = WriteEventToFile(filePath, jsonData, event)
+
+		if err != nil && attempt < 5 {
+			time.Sleep(time.Duration(attempt) * time.Second) // 5 second wait if more attempts left
+		}
+
+		return attempt < 5, err
 	})
 	if err != nil {
 		return fmt.Errorf("Unable to upload file: %v", err)
@@ -79,11 +89,11 @@ func WriteEventToFile(filePath string, jsonData MetadataJson, event map[string]i
 
 	jsonData.Events = append(jsonData.Events, properties)
 
-  file, err := json.Marshal(jsonData)
+	file, err := json.Marshal(jsonData)
 	if err != nil {
 		return fmt.Errorf("Unable to marshal json: %v", err)
 	}
-  
+
 	return ioutil.WriteFile(filePath, file, 0644)
 }
 

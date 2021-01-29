@@ -66,7 +66,7 @@ func (ua Args) WriteTransactionEvent(event map[string]interface{}) error {
 		if jsonData.Events == nil {
 			jsonData, err = CheckExistingFile(filePath)
 			if err != nil {
-				log.Printf("Failed to write event: Attempt %v, Error: %v", attempt, err)
+				log.Printf("Failed to read event: Attempt %v, Error: %v", attempt, err)
 
 				if attempt < 5 {
 					time.Sleep(time.Duration(attempt) * time.Second) // 5 second wait if more attempts left

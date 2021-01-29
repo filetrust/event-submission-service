@@ -79,11 +79,11 @@ func WriteEventToFile(filePath string, jsonData MetadataJson, event map[string]i
 
 	jsonData.Events = append(jsonData.Events, properties)
 
-	file, err := json.Marshal(jsonData)
+  file, err := json.Marshal(jsonData)
 	if err != nil {
-		return err
+		return fmt.Errorf("Unable to marshal json: %v", err)
 	}
-
+  
 	return ioutil.WriteFile(filePath, file, 0644)
 }
 

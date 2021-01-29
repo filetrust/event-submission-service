@@ -21,6 +21,7 @@ const (
 	ok               = "ok"
 	jsonerr          = "json_error"
 	timestamperr     = "timestamp_error"
+	writeerr         = "write_error"
 	analysisReportID = 112
 )
 
@@ -163,9 +164,20 @@ func processJSONBody(body map[string]interface{}) (bool, error) {
 	eventID := int(body["EventId"].(float64))
 
 	if eventID == analysisReportID {
-		args.WriteAnalysisReport(body["AnalysisReport"].(string))
+		err := args.WriteAnalysisReport(body["AnalysisReport"].(string))
+
+		if err != nil {
+			msgTotal.WithLabelValues(writeerr).Inc()
+			return true, err
+		}
+
 	} else {
-		args.WriteTransactionEvent(body)
+		err := args.WriteTransactionEvent(body)
+
+		if err != nil {
+			msgTotal.WithLabelValues(writeerr).Inc()
+			return true, err
+		}
 	}
 
 	msgTotal.WithLabelValues(ok).Inc()

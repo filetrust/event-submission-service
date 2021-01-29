@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+
+	"github.com/matryer/try"
 )
 
 type Args struct {
@@ -54,31 +56,51 @@ func (ua Args) WriteTransactionEvent(event map[string]interface{}) error {
 
 	filePath := fmt.Sprintf("%s/metadata.json", ua.Path)
 
-	jsonData := MetadataJson{}
+	err := try.Do(func(attempt int) (bool, error) {
+		jsonData := MetadataJson{}
+		jsonData, err := CheckExistingFile(filePath)
 
-	if _, err := os.Stat(filePath); !os.IsNotExist(err) {
-		content, err := ioutil.ReadFile(filePath)
 		if err != nil {
-			return fmt.Errorf("Unable to parse file as json: %v", err)
+			return attempt < 5, fmt.Errorf("Unable to parse file as json: %v", err)
 		}
 
-		err = json.Unmarshal(content, &jsonData)
-		if err != nil {
-			return fmt.Errorf("Unable to parse file as json: %v", err)
-		}
+		return attempt < 5, WriteEventToFile(filePath, jsonData, event)
+	})
+	if err != nil {
+		return fmt.Errorf("Unable to upload file: %v", err)
 	}
 
+	return nil
+}
+
+func WriteEventToFile(filePath string, jsonData MetadataJson, event map[string]interface{}) error {
 	properties := PropertiesData{}
 	properties.Properties = event
 
 	jsonData.Events = append(jsonData.Events, properties)
 
 	file, err := json.Marshal(jsonData)
-
-	err = ioutil.WriteFile(filePath, file, 0644)
 	if err != nil {
-		return fmt.Errorf("Unable to upload file: %v", err)
+		return err
 	}
 
-	return nil
+	return ioutil.WriteFile(filePath, file, 0644)
+}
+
+func CheckExistingFile(filePath string) (MetadataJson, error) {
+	jsonData := MetadataJson{}
+
+	if _, err := os.Stat(filePath); !os.IsNotExist(err) {
+		content, err := ioutil.ReadFile(filePath)
+		if err != nil {
+			return jsonData, fmt.Errorf("Unable to parse file as json: %v", err)
+		}
+
+		err = json.Unmarshal(content, &jsonData)
+		if err != nil {
+			return jsonData, fmt.Errorf("Unable to parse file as json: %v", err)
+		}
+	}
+
+	return jsonData, nil
 }

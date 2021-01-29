@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"os"
 	"time"
 
@@ -62,19 +63,30 @@ func (ua Args) WriteTransactionEvent(event map[string]interface{}) error {
 		jsonData, err := CheckExistingFile(filePath)
 
 		if err != nil {
+			errmsg := fmt.Errorf("Unable to parse file as json: %v", err)
+			log.Printf("Failed to write event: Attempt %v, Error: %v", attempt, errmsg)
+
 			if attempt < 5 {
 				time.Sleep(time.Duration(attempt) * time.Second) // 5 second wait if more attempts left
 			}
-			return attempt < 5, fmt.Errorf("Unable to parse file as json: %v", err)
+
+			return attempt < 5, errmsg
 		}
 
 		err = WriteEventToFile(filePath, jsonData, event)
 
-		if err != nil && attempt < 5 {
-			time.Sleep(time.Duration(attempt) * time.Second) // 5 second wait if more attempts left
+		if err != nil {
+			errmsg := fmt.Errorf("Unable to write file: %v", err)
+			log.Printf("Failed to write event: Attempt %v, Error: %v", attempt, errmsg)
+
+			if attempt < 5 {
+				time.Sleep(time.Duration(attempt) * time.Second) // 5 second wait if more attempts left
+			}
+
+			return attempt < 5, errmsg
 		}
 
-		return attempt < 5, err
+		return attempt < 5, nil
 	})
 	if err != nil {
 		return fmt.Errorf("Unable to upload file: %v", err)

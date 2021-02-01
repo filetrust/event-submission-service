@@ -66,7 +66,7 @@ func (ua Args) WriteTransactionEvent(event map[string]interface{}) error {
 		if jsonData.Events == nil {
 			jsonData, err = CheckExistingFile(filePath)
 			if err != nil {
-				log.Printf("Failed to write event: Attempt %v, Error: %v", attempt, err)
+				log.Printf("Failed to read event: Attempt %v, Error: %v", attempt, err)
 
 				if attempt < 5 {
 					time.Sleep(time.Duration(attempt) * time.Second) // 5 second wait if more attempts left
@@ -74,9 +74,14 @@ func (ua Args) WriteTransactionEvent(event map[string]interface{}) error {
 
 				return attempt < 5, err
 			}
+
+			properties := PropertiesData{}
+			properties.Properties = event
+
+			jsonData.Events = append(jsonData.Events, properties)
 		}
 
-		err = WriteEventToFile(filePath, jsonData, event)
+		err = WriteEventToFile(filePath, jsonData)
 		if err != nil {
 			log.Printf("Failed to write event: Attempt %v, Error: %v", attempt, err)
 
@@ -96,12 +101,7 @@ func (ua Args) WriteTransactionEvent(event map[string]interface{}) error {
 	return nil
 }
 
-func WriteEventToFile(filePath string, jsonData MetadataJson, event map[string]interface{}) error {
-	properties := PropertiesData{}
-	properties.Properties = event
-
-	jsonData.Events = append(jsonData.Events, properties)
-
+func WriteEventToFile(filePath string, jsonData MetadataJson) error {
 	file, err := json.Marshal(jsonData)
 	if err != nil {
 		return fmt.Errorf("Unable to marshal json: %v", err)

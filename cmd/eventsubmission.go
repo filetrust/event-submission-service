@@ -11,6 +11,7 @@ import (
 	"net/url"
 
 	transactionservice "github.com/filetrust/event-submission-service/pkg"
+	"github.com/filetrust/event-submission-service/pkg/comms"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -21,6 +22,7 @@ const (
 	ok               = "ok"
 	jsonerr          = "json_error"
 	timestamperr     = "timestamp_error"
+	writeerr         = "write_error"
 	analysisReportID = 112
 )
 
@@ -83,39 +85,27 @@ func main() {
 		Path:   "/",
 	}
 
-	fmt.Println("Connecting to ", amqpURL.Host)
-
-	conn, err := amqp.Dial(amqpURL.String())
-	failOnError(err, "Failed to connect to RabbitMQ")
-	defer conn.Close()
-
-	ch, err := conn.Channel()
-	failOnError(err, "Failed to open a channel")
-	defer ch.Close()
-
-	err = ch.ExchangeDeclare(exchange, "direct", true, false, false, false, nil)
-	failOnError(err, "Failed to declare an exchange")
-
-	q, err := ch.QueueDeclare(queueName, true, false, false, false, nil)
-	failOnError(err, "Failed to declare a queue")
-
-	err = ch.QueueBind(q.Name, routingKey, exchange, false, nil)
-	failOnError(err, "Failed to bind queue")
-
-	msgs, err := ch.Consume(q.Name, "", true, false, false, false, nil)
-	failOnError(err, "Failed to register a consumer")
-
 	forever := make(chan bool)
 
-	go func() {
-		for d := range msgs {
-			requeue, err := processMessage(d)
-			if err != nil {
-				log.Printf("Failed to process message: %v", err)
-				ch.Nack(d.DeliveryTag, false, requeue)
-			}
-		}
-	}()
+	fmt.Println("Connecting to ", amqpURL.Host)
+
+	conn := comms.NewConnection("event-submission-consumer", exchange, routingKey, []string{queueName}, amqpURL)
+	if err := conn.Connect(); err != nil {
+		failOnError(err, "Failed to connect to RabbitMQ")
+	}
+
+	if err := conn.BindQueue(); err != nil {
+		failOnError(err, "Failed to bind queue")
+	}
+
+	deliveries, err := conn.Consume()
+	if err != nil {
+		failOnError(err, "Failed to register a consumer")
+	}
+
+	for q, d := range deliveries {
+		go conn.HandleConsumedDeliveries(q, d, messageHandler)
+	}
 
 	go func() {
 		http.Handle("/metrics", promhttp.Handler())
@@ -129,6 +119,12 @@ func main() {
 func failOnError(err error, msg string) {
 	if err != nil {
 		log.Fatalf("%s: %s", msg, err)
+	}
+}
+
+func messageHandler(c comms.Connection, q string, deliveries <-chan amqp.Delivery) {
+	for d := range deliveries {
+		processMessage(d)
 	}
 }
 
@@ -163,9 +159,20 @@ func processJSONBody(body map[string]interface{}) (bool, error) {
 	eventID := int(body["EventId"].(float64))
 
 	if eventID == analysisReportID {
-		args.WriteAnalysisReport(body["AnalysisReport"].(string))
+		err := args.WriteAnalysisReport(body["AnalysisReport"].(string))
+
+		if err != nil {
+			msgTotal.WithLabelValues(writeerr).Inc()
+			return true, err
+		}
+
 	} else {
-		args.WriteTransactionEvent(body)
+		err := args.WriteTransactionEvent(body)
+
+		if err != nil {
+			msgTotal.WithLabelValues(writeerr).Inc()
+			return true, err
+		}
 	}
 
 	msgTotal.WithLabelValues(ok).Inc()
